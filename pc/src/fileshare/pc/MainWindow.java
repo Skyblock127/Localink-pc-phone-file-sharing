@@ -127,10 +127,38 @@ public final class MainWindow extends JFrame {
         layers.setOpaque(true);
         layers.add(top, javax.swing.JLayeredPane.DEFAULT_LAYER);
         layers.add(bottomPanel, javax.swing.JLayeredPane.PALETTE_LAYER);
-        layers.addComponentListener(new java.awt.event.ComponentAdapter() {
-            @Override public void componentResized(java.awt.event.ComponentEvent e) {
-                layoutLayers(top);
+
+        // A real layout manager, not a resize listener. JLayeredPane has no
+        // layout by default, so children keep whatever bounds they were given and
+        // are never re-validated -- which is why maximising left part of the
+        // window still laid out for the old size.
+        layers.setLayout(new java.awt.LayoutManager() {
+            @Override public void layoutContainer(java.awt.Container parent) {
+                int w = parent.getWidth();
+                int h = parent.getHeight();
+                if (w <= 0 || h <= 0) return;
+
+                top.setBounds(0, 0, w, h);
+                int bh = Math.max(minDrawer(), Math.min(maxDrawer(), drawerHeight));
+                drawerHeight = bh;
+                bottomPanel.setBounds(0, h - bh, w, bh);
+
+                // Bounds changed, so the subtrees have to lay themselves out too.
+                top.validate();
+                bottomPanel.validate();
             }
+
+            @Override public java.awt.Dimension preferredLayoutSize(java.awt.Container p) {
+                return new java.awt.Dimension(800, 500);
+            }
+
+            @Override public java.awt.Dimension minimumLayoutSize(java.awt.Container p) {
+                return new java.awt.Dimension(400, 300);
+            }
+
+            @Override public void addLayoutComponent(String n, java.awt.Component c) { }
+
+            @Override public void removeLayoutComponent(java.awt.Component c) { }
         });
 
         JPanel rootPane = new JPanel(new BorderLayout());
@@ -139,7 +167,7 @@ public final class MainWindow extends JFrame {
         rootPane.add(layers, BorderLayout.CENTER);
         setContentPane(rootPane);
         SwingUtilities.invokeLater(new Runnable() {
-            @Override public void run() { layoutLayers(top); }
+            @Override public void run() { relayout(); }
         });
 
         table.getSelectionModel().addListSelectionListener(
@@ -330,15 +358,10 @@ public final class MainWindow extends JFrame {
         return bottom;
     }
 
-    private void layoutLayers(JComponent top) {
-        int w = layers.getWidth();
-        int h = layers.getHeight();
-        if (w <= 0 || h <= 0) return;
-
-        top.setBounds(0, 0, w, h);
-        int bh = Math.max(minDrawer(), Math.min(maxDrawer(), drawerHeight));
-        drawerHeight = bh;
-        bottomPanel.setBounds(0, h - bh, w, bh);
+    /** Re-runs the layer layout immediately, for drags. */
+    private void relayout() {
+        if (layers == null) return;
+        layers.doLayout();
         layers.repaint();
     }
 
@@ -472,7 +495,7 @@ public final class MainWindow extends JFrame {
         List<Item> fresh = new ArrayList<Item>();
 
         for (Rows.Row r : model.at(selectedModelRows())) {
-            if (r.incoming || r.done) continue;
+            if (!r.sendable()) continue;
 
             if (r.paused) {
                 r.paused = false;
@@ -556,7 +579,7 @@ public final class MainWindow extends JFrame {
         // selecting a finished file never lights the button up.
         int sendable = 0;
         for (Rows.Row r : model.at(sel)) {
-            if (!r.incoming && !r.done && (!r.inFlight || r.paused)) sendable++;
+            if (r.sendable()) sendable++;
         }
         sendButton.setEnabled(sendable > 0);
         sendButton.setText(sendable > 1 ? "Send " + sendable : "Send");
@@ -866,7 +889,7 @@ public final class MainWindow extends JFrame {
             addMouseMotionListener(new MouseMotionAdapter() {
                 @Override public void mouseDragged(MouseEvent e) {
                     drawerHeight = startHeight + (startY - e.getYOnScreen());
-                    layoutLayers((JComponent) centre);
+                    relayout();
                 }
             });
         }

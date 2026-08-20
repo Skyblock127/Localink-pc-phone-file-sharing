@@ -67,6 +67,22 @@ public final class TransferState {
 
     public boolean isDeclined(String id) { return declined.contains(id); }
 
+    /**
+     * Forget decisions about anything no longer on offer.
+     *
+     * A "no" should last exactly as long as the sender keeps asking. Once it
+     * drops the file from its queue the answer is spent, so adding the same file
+     * again later gets a fresh prompt rather than a silent refusal.
+     */
+    public void retainOnly(java.util.Set<String> stillOffered) {
+        synchronized (declined) {
+            declined.retainAll(stillOffered);
+        }
+        synchronized (accepted) {
+            accepted.retainAll(stillOffered);
+        }
+    }
+
     public void clear() {
         accepted.clear();
         declined.clear();
@@ -86,7 +102,11 @@ public final class TransferState {
             Item it = offered.get(i);
             if (declined.contains(it.id)) {
                 answer[i] = false;
-            } else if (accepted.contains(it.id)) {
+            } else if (accepted.contains(it.id) && it.have > 0) {
+                // Only ever waved through to carry on a transfer that is already
+                // part way in. Auto-accepting from zero is how a file that had
+                // been agreed to once could be re-sent, and written again, with
+                // nobody asked.
                 answer[i] = true;
             } else {
                 ask.add(it);

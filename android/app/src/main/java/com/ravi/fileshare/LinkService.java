@@ -395,6 +395,13 @@ public final class LinkService extends Service {
 
         Io.Approver approver = new Io.Approver() {
             @Override public boolean[] decide(List<Item> offered) {
+                // A decision only lasts while the laptop keeps offering the file.
+                // Once it drops out of the queue the answer is spent, so adding it
+                // again later asks afresh instead of silently refusing.
+                java.util.Set<String> onOffer = new java.util.HashSet<String>();
+                for (Item o : offered) onOffer.add(o.id);
+                state.retainOnly(onOffer);
+
                 List<Item> ask = new ArrayList<Item>();
                 List<Integer> at = new ArrayList<Integer>();
                 boolean[] answer = state.preDecide(offered, ask, at);
@@ -403,6 +410,15 @@ public final class LinkService extends Service {
 
                 showNotification("Files waiting", ask.size() + " from your laptop");
                 boolean[] chosen = OfferGate.ask(ask);
+
+                if (chosen == null) {
+                    // Nothing on screen to ask. Say no for now without remembering
+                    // it as a refusal, so the laptop keeps them queued and offers
+                    // again the moment the app is open.
+                    log(ask.size() + " file(s) waiting -- open Localink to accept");
+                    return answer;
+                }
+
                 for (int i = 0; i < chosen.length && i < at.size(); i++) {
                     answer[at.get(i).intValue()] = chosen[i];
                     if (chosen[i]) state.noteAccepted(ask.get(i).id);

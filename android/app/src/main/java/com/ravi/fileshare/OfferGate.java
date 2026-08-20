@@ -17,9 +17,11 @@ import fileshare.core.Item;
 public final class OfferGate {
     private OfferGate() {}
 
-    /** Long enough to walk back to the phone, short enough that a forgotten
-     *  offer does not hold the connection open indefinitely. */
-    private static final long TIMEOUT_MS = 180_000;
+    /**
+     * Must stay well under the connection read timeout, or a slow decision looks
+     * like a dead peer and the connection is torn down underneath it.
+     */
+    private static final long TIMEOUT_MS = 120_000;
 
     public static final class Pending {
         public final List<Item> items;
@@ -51,12 +53,20 @@ public final class OfferGate {
         return CURRENT.get();
     }
 
-    /** Called on the transfer thread. Blocks until the user decides. */
+    /**
+     * @return the decision, or null when there was no screen to ask.
+     *
+     * Returning null rather than waiting matters: while the app is in the
+     * background nothing can answer, and blocking here used to hold the reply
+     * long past the point where the laptop gave up on the connection.
+     */
     public static boolean[] ask(List<Item> items) {
         Pending p = new Pending(items);
-        CURRENT.set(p);
         Watcher w = watcher;
-        if (w != null) w.onOffer(p);
+        if (w == null) return null;
+
+        CURRENT.set(p);
+        w.onOffer(p);
 
         try {
             if (!p.latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)) {

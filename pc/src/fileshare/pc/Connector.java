@@ -69,6 +69,10 @@ public final class Connector {
     private final Object lock = new Object();
     private List<Item> pending = new ArrayList<Item>();
 
+    /** Every id that is queued or in flight, so nothing is ever queued twice. */
+    private final java.util.Set<String> queued =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+
     /** Paused items, held so Resume can put them straight back in the queue. */
     private final Map<String, Item> pausedItems =
             Collections.synchronizedMap(new LinkedHashMap<String, Item>());
@@ -109,15 +113,25 @@ public final class Connector {
      * A file must never appear twice: the receiver would take it twice and write
      * two copies. This is the backstop for that; callers are expected not to try.
      */
+    /**
+     * Adds to the queue, once.
+     *
+     * The guard is a set of ids covering both the waiting list and the batch
+     * currently in flight. Checking {@code pending} alone was not enough: a round
+     * moves the batch out of {@code pending} before sending it, so for the whole
+     * duration of a transfer the same file looked un-queued and could be added
+     * again -- and the receiver would then write it twice.
+     */
     public void enqueue(List<Item> items) {
         synchronized (lock) {
             for (Item it : items) {
-                if (it.id.equals(currentItemId)) continue;
-                boolean already = false;
-                for (Item q : pending) {
-                    if (q.id.equals(it.id)) { already = true; break; }
+                if (!queued.add(it.id)) {
+                    // Should not happen; logged because a silent duplicate here
+                    // means the receiver writes the file twice.
+                    listener.onLog("Already queued, ignoring: " + it.name);
+                    continue;
                 }
-                if (!already) pending.add(it);
+                pending.add(it);
             }
         }
     }
@@ -131,6 +145,7 @@ public final class Connector {
             pending = keep;
         }
         for (String id : ids) {
+            queued.remove(id);
             pausedItems.remove(id);
             state.forget(id);
         }
@@ -356,6 +371,14 @@ public final class Connector {
             batch = pending;
             pending = new ArrayList<Item>();
         }
+        if (!batch.isEmpty()) {
+            StringBuilder names = new StringBuilder();
+            for (Item it : batch) {
+                if (names.length() > 0) names.append(", ");
+                names.append(it.name);
+            }
+            listener.onLog("Offering " + batch.size() + ": " + names);
+        }
 
         // Anything that reaches a conclusion this round must not go back on the
         // queue if the connection drops later in the same round. Putting the
@@ -382,6 +405,7 @@ public final class Connector {
             @Override public void onDone(Item it, boolean ok, String msg) {
                 currentItemId = null;
                 settled.add(it.id);
+                queued.remove(it.id);
                 state.forget(it.id);
                 if (snd()) listener.onSendResult(it, ok, msg);
                 else if (ok) listener.onReceived(it, new File(vault.downloadDir(), it.name));
@@ -391,6 +415,7 @@ public final class Connector {
             @Override public void onPaused(Item it, long done, long total, boolean snd) {
                 currentItemId = null;
                 settled.add(it.id);
+                queued.remove(it.id);
                 if (snd) pausedItems.put(it.id, it);
                 listener.onPaused(it, done, total, snd);
                 listener.onLog("Paused " + it.name + " at " + Hexes.humanBytes(done));
@@ -399,6 +424,7 @@ public final class Connector {
             @Override public void onCancelled(Item it) {
                 currentItemId = null;
                 settled.add(it.id);
+                queued.remove(it.id);
                 state.forget(it.id);
                 pausedItems.remove(it.id);
                 listener.onCancelled(it);
@@ -418,14 +444,13 @@ public final class Connector {
             for (Item it : batch) {
                 Io.Outcome o = res.get(it.id);
                 if (o == Io.Outcome.REJECTED) {
-                    // Only a real "no" reaches here now: paused files are not in
-                    // the queue at all, so they are never offered and can never
-                    // come back as a rejection.
+                    // The row was already marked when the reply came in; this only
+                    // tidies the queue bookkeeping.
                     settled.add(it.id);
-                    state.noteDeclined(it.id);
-                    listener.onSendResult(it, false, "Declined on phone");
+                    queued.remove(it.id);
                 } else if (o == Io.Outcome.DONE) {
                     settled.add(it.id);
+                    queued.remove(it.id);
                     state.forget(it.id);
                 }
             }
@@ -536,6 +561,7 @@ public final class Connector {
         if (fp != null) vault.forget(fp);
         synchronized (lock) { pending = new ArrayList<Item>(); }
         pausedItems.clear();
+        queued.clear();
         state.clear();
         listener.onStatus("Not paired", false);
 

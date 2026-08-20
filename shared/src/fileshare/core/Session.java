@@ -38,8 +38,16 @@ public final class Session implements Closeable {
     static final int MODE_NORMAL = 0;
     static final int MODE_PAIR = 1;
 
-    /** Nothing should ever wait longer than this for the next frame. */
-    private static final long TAKE_TIMEOUT_MS = 30_000;
+    /**
+     * How long to wait for the next frame before calling the peer dead.
+     *
+     * Generous on purpose: one of the things we wait for is a person deciding
+     * whether to accept a file. This used to be shorter than that decision could
+     * take, so every slow answer dropped the connection, re-queued the batch and
+     * offered it all over again. Idle links are still noticed quickly, because
+     * the empty offer round trip runs continuously.
+     */
+    private static final long TAKE_TIMEOUT_MS = 180_000;
 
     public interface Trust {
         /** Display name for a pinned fingerprint, or null if this peer is unknown. */

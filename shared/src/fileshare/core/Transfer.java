@@ -71,12 +71,20 @@ public final class Transfer {
             reply.put(id, new long[]{accept ? 1 : 0, have});
         }
 
+        // Announce refusals straight away. The reply carries the answer for every
+        // file at once, so waiting until the accepted ones have finished
+        // transferring before saying "declined" is needlessly confusing.
         for (Item it : queue) {
             long[] r = reply.get(it.id);
             if (r == null || r[0] == 0) {
                 result.put(it.id, Io.Outcome.REJECTED);
-                continue;
+                ev.onDone(it, false, "Declined on phone");
             }
+        }
+
+        for (Item it : queue) {
+            long[] r = reply.get(it.id);
+            if (r == null || r[0] == 0) continue;
             long have = r[1];
             if (have < 0 || have > it.size) have = 0;
             it.have = have;

@@ -60,6 +60,18 @@ public final class Rows extends AbstractTableModel {
             if (!inFlight) return "Ready";
             return status;
         }
+
+        /**
+         * Can this row still be sent?
+         *
+         * A declined or failed row cannot: it is finished as far as this queue is
+         * concerned, and the only way to try again is to add the file afresh.
+         * Leaving it "ready" let it be queued, paused and resumed, which is how it
+         * got back into the pipeline after the phone had already said no.
+         */
+        public boolean sendable() {
+            return !incoming && !done && !failed && (!inFlight || paused);
+        }
     }
 
     private final List<Row> rows = new ArrayList<Row>();
@@ -80,8 +92,20 @@ public final class Rows extends AbstractTableModel {
 
         Item it = new Item();
         it.id = PcStore.idFor(f);
-        for (Row r : rows) {
-            if (r.item.id.equals(it.id)) return false;
+
+        // Adding a file that is already listed: if that entry is finished -- sent,
+        // declined or failed -- replace it with a fresh one, so dropping the file
+        // in again is all it takes to try once more. An entry still queued, moving
+        // or paused is left alone; the queue already has it.
+        for (int i = 0; i < rows.size(); i++) {
+            Row r = rows.get(i);
+            if (!r.item.id.equals(it.id)) continue;
+            if (r.done || r.failed) {
+                rows.remove(i);
+                fireTableRowsDeleted(i, i);
+                break;
+            }
+            return false;
         }
         it.name = Sanitize.fileName(f.getName());
         it.size = f.length();
@@ -132,6 +156,7 @@ public final class Rows extends AbstractTableModel {
             if (i < 0 || i >= rows.size()) continue;
             Row r = rows.get(i);
             if (r.incoming && r.inFlight && !r.done && !r.paused) continue;  // stop it first
+            if (!r.incoming && r.inFlight && !r.paused && !r.done && !r.failed) continue;
             doomed.add(r);
             if (r.recallable()) recalled.add(r.item.id);
         }
@@ -152,9 +177,16 @@ public final class Rows extends AbstractTableModel {
     public int readyCount() {
         int n = 0;
         for (Row r : rows) {
-            if (!r.incoming && !r.done && (!r.inFlight || r.paused)) n++;
+            if (r.sendable()) n++;
         }
         return n;
+    }
+
+    public boolean anySendable(int[] modelRows) {
+        for (Row r : at(modelRows)) {
+            if (r.sendable()) return true;
+        }
+        return false;
     }
 
     /** True if any of these rows is moving or paused, so Pause applies. */
