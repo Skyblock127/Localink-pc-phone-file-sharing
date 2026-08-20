@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#3A51FA</color>
+
+    <!-- Light -->
+    <color name="primary">#3A51FA</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="primary_container">#DEE1FF</color>
+    <color name="on_primary_container">#001159</color>
+    <color name="secondary_container">#E2E1F4</color>
+    <color name="on_secondary_container">#191A2C</color>
+    <color name="surface">#FCFCFF</color>
+    <color name="on_surface">#1A1B21</color>
+    <color name="surface_variant">#E8E8F3</color>
+    <color name="on_surface_variant">#585A6B</color>
+    <color name="outline">#8A8C9B</color>
+    <color name="outline_variant">#D6D7E3</color>
+
+    <!-- Dark -->
+    <color name="primary_dark">#3A51FA</color>
+    <color name="on_primary_dark">#FFFFFF</color>
+    <color name="primary_container_dark">#2136D6</color>
+    <color name="on_primary_container_dark">#DEE1FF</color>
+    <color name="secondary_container_dark">#2B2D45</color>
+    <color name="on_secondary_container_dark">#E2E1F4</color>
+    <color name="surface_dark">#121318</color>
+    <color name="on_surface_dark">#E4E2E9</color>
+    <color name="surface_variant_dark">#25262F</color>
+    <color name="on_surface_variant_dark">#C5C6D6</color>
+    <color name="outline_dark">#8F909E</color>
+    <color name="outline_variant_dark">#44454F</color>
+
+    <color name="ok">#2E9E5B</color>
+    <color name="warn">#E08600</color>
+    <color name="bad">#D93A34</color>
+</resources>
